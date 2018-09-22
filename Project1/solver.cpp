@@ -6,8 +6,8 @@
 using namespace std;
 
 int main(int argc, char** argv) {
-    int xSize = 4;
-    int ySize = 4;
+    int xSize = 5;
+    int ySize = 5;
     int xMin = 0;
     int xMax = 2;
     int yMin = 0;
@@ -17,7 +17,12 @@ int main(int argc, char** argv) {
     double leftBound = 1;
     double rightBound = 3; 
     
-    const double threshold = 0.001;
+    double xStep = ((double) (xMax - xMin)) / ((double) xSize);
+    xStep *= xStep;
+    double yStep = ((double) (yMax - yMin)) / ((double) ySize);
+    yStep *= yStep;
+    
+    const double threshold = pow(10, -12);
     // Allocate the mesh grid that Poisson should be calculated over
     int numElements = xSize*ySize;
     double* mesh = new double[numElements];
@@ -34,38 +39,66 @@ int main(int argc, char** argv) {
             mesh[i] = rightBound;
     }
 
-    cout << "Starting matrix\n";
+    double* mesh2 = new double[numElements];
+    copyMesh(mesh, mesh2, numElements);
+
+    cout << "Starting mesh:\n";
     printMesh(mesh, xSize, ySize);
 
     // Has the change after each iteration fallen low enough to stop
-    bool changeBelowThreshold = true;
+    bool changeBelowThreshold = false;
     // Test value to check change
     double oldTestVal = 0;
     double newTestVal = 0;
     // Index of the array to test
     int testIndex = (ySize/2)*xSize + (xSize/2);
     while (!changeBelowThreshold) {
-        updateMeshJacobi(mesh, xSize, ySize);
+        updateMeshGauss(mesh, mesh2, xSize, ySize, xStep, yStep);
         newTestVal = mesh[testIndex];
         if (abs(newTestVal - oldTestVal) < threshold)
             changeBelowThreshold = true; 
+        oldTestVal = newTestVal;
+        // printMesh(mesh, xSize, ySize);
     }
+    cout << "Final mesh:\n";
+    printMesh(mesh, xSize, ySize);
 }
 
 double* updateMeshJacobi(double* mesh, int xSize, int ySize) {
     return mesh;
 }
 
-double* updateMeshGauss(double* mesh, int xSize, int ySize) {
+void updateMeshGauss(double* mesh, double* newMesh, int xSize, int ySize, double xStep, double yStep) {
+    double source, term1, term2, term3, result;
+    for (int i = 1; i < ySize-1; i++) {
+        for (int j = 1; j < xSize-1; j++) {
+            source = sourceTerm(j, i);
+            term1 = xStep * (mesh[(i+1)*xSize + j] + mesh[(i-1)*xSize + j]);
+            term2 = yStep * (mesh[i*xSize + (j+1)] + mesh[i*xSize + (j-1)]);
+            term3 = -1 * (xStep*yStep*source);
+            result = (term1 + term2 + term3) / (2*(xStep + yStep));
+            newMesh[i*xSize + j] = result;
+        }
+    }
+    copyMesh(newMesh, mesh, xSize*ySize);
+}
 
-    return mesh;
+double sourceTerm(int x, int y) {
+    return ((double) x) * exp((double) y);
 }
 
 void printMesh(double* mesh, int xSize, int ySize) {
     for (int i = 0; i < ySize; i++) {
-        for (int j = 0; j < xSize; j++) {
+        for (int j = 0; j < xSize; j++) 
             cout << mesh[i*xSize + j] << " ";
-        }
+        
         cout << "\n";
     }
+    cout << "\n";
+}
+
+// TODO: only copy boundary values
+void copyMesh(double* mesh, double* newMesh, int numElements) {
+    for (int i = 0; i < numElements; i++) 
+        newMesh[i] = mesh[i];
 }
