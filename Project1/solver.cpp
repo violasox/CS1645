@@ -1,4 +1,5 @@
 #include <cmath>
+#include <iomanip>
 #include <iostream>
 #include <string>
 #include "solver.h"
@@ -6,8 +7,13 @@
 using namespace std;
 
 int main(int argc, char** argv) {
-    int xSize = 5;
-    int ySize = 5;
+    if (argc != 3) {
+        cout << "Need exactly two arguments: mesh size in x and y directions\n";
+        return 1;
+    }
+
+    int xSize = stoi(argv[1]);
+    int ySize = stoi(argv[2]);
     int xMin = 0;
     int xMax = 2;
     int yMin = 0;
@@ -35,16 +41,22 @@ int main(int argc, char** argv) {
     double newTestVal = 0;
     // Index of the array to test
     int testIndex = (ySize/2)*xSize + (xSize/2);
+    int numIter = 0;
     while (!changeBelowThreshold) {
         updateMeshGauss(mesh, mesh2, xSize, ySize, xStep, yStep);
         newTestVal = mesh[testIndex];
         if (abs(newTestVal - oldTestVal) < threshold)
             changeBelowThreshold = true; 
         oldTestVal = newTestVal;
-        // printMesh(mesh, xSize, ySize);
+        numIter++;
     }
     cout << "Final mesh:\n";
     printMesh(mesh, xSize, ySize);
+    cout << "Expected final mesh:\n";
+    printExactResult(xSize, ySize, xStep, yStep);
+    double loss = checkResult(mesh, xSize, ySize, xStep, yStep);
+    cout << "Loss: " << loss << "\n";
+    cout << "Number of iterations: " << numIter << "\n";
 }
 
 double* updateMeshJacobi(double* mesh, int xSize, int ySize) {
@@ -75,7 +87,7 @@ double sourceTerm(double x, double y) {
 void printMesh(double* mesh, int xSize, int ySize) {
     for (int i = ySize-1; i >= 0; i--) {
         for (int j = 0; j < xSize; j++) 
-            cout << mesh[i*xSize + j] << " ";
+            cout << setprecision(4) << setw(6) << mesh[i*xSize + j] << " ";
         
         cout << "\n";
     }
@@ -90,7 +102,8 @@ void setBounds(double* mesh, int xSize, int ySize, double xStep, double yStep) {
                 mesh[i*xSize + j] = ((double) j)*xStep;
             // Top bound
             else if (i == ySize - 1)
-                mesh[i*xSize + j] = exp(((double) j)*xStep);
+                // mesh[i*xSize + j] = exp(((double) j)*xStep);
+                mesh[i*xSize + j] = ((double) j)*xStep*exp(1);
             // Left bound
             else if (j == 0)
                 mesh[i*xSize + j] = 0;
@@ -101,8 +114,32 @@ void setBounds(double* mesh, int xSize, int ySize, double xStep, double yStep) {
     }
 }
 
-// TODO: only copy boundary values
 void copyMesh(double* mesh, double* newMesh, int numElements) {
     for (int i = 0; i < numElements; i++) 
         newMesh[i] = mesh[i];
+}
+
+double checkResult(double* mesh, int xSize, int ySize, double xStep, double yStep) {
+    double loss = 0;
+    double groundTruth;
+    for (int i = 1; i < ySize-1; i++) {
+        for (int j = 1; j < xSize-1; j++) {
+            groundTruth = (((double) j)*xStep) * exp(((double) i)*yStep);
+            loss += abs(groundTruth - mesh[i*xSize + j]);
+        }
+    }
+    int numPoints = (xSize-2)*(ySize-2);
+    loss /= (double) numPoints;
+    return loss;
+}
+
+void printExactResult(int xSize, int ySize, double xStep, double yStep) {
+    double* exactMesh = new double[xSize*ySize];
+    for (int i = 0; i < ySize; i++) {
+        for (int j = 0; j < xSize; j++) {
+            exactMesh[i*xSize + j] = ((double) j)*xStep * exp(((double) i)*yStep);
+        }
+    }
+    printMesh(exactMesh, xSize, ySize);
+    delete exactMesh;
 }
