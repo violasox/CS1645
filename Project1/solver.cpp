@@ -14,9 +14,9 @@ int main(int argc, char** argv) {
     clock_t start = clock();
 
     // Flag to toggle verification (true) or problem solving (false)
-    bool verifyMode = false;
+    bool verifyMode = true;
     // Flag to use Jacobi (true) or Gauss-Seidel (false)
-    bool useJacobi = true;
+    bool useJacobi = false;
     
     if (argc < 3) {
         cout << "Need at least arguments: mesh size in x and y directions. Use 3rd argument -v for verbose mode.\n";
@@ -56,6 +56,8 @@ int main(int argc, char** argv) {
     setBounds(mesh, xSize, ySize, xStep, yStep, verifyMode);
     double* mesh2 = new double[numElements];
     copyMesh(mesh, mesh2, numElements);
+    double* oldMesh = new double[numElements];
+    copyMesh(mesh, oldMesh, numElements);
 
     if (verbose) {
         cout << "Starting mesh:\n";
@@ -64,23 +66,24 @@ int main(int argc, char** argv) {
 
     // Has the change after each iteration fallen low enough to stop
     bool changeBelowThreshold = false;
-    // Test value to check change
-    double oldTestVal = 0;
-    double newTestVal = 0;
-    // Index of the array to test
-    int testIndex = (ySize/2)*xSize + (xSize/2);
     int numIter = 0;
     // Main loop: update the mesh and check whether it's reached convergence
     while (!changeBelowThreshold) {
         if (useJacobi)
-            updateMeshJacobi(mesh, xSize, ySize, xStep, yStep, verifyMode);
+            updateMeshJacobi(mesh, mesh2, xSize, ySize, xStep, yStep, verifyMode);
         else
-            updateMeshGauss(mesh, mesh2, xSize, ySize, xStep, yStep, verifyMode);
+            updateMeshGauss(mesh, xSize, ySize, xStep, yStep, verifyMode);
 
-        newTestVal = mesh[testIndex];
-        if (abs(newTestVal - oldTestVal) < threshold)
+        double maxLoss = 0;
+        for (int k = 0; k < numElements; k++) {
+            double loss = abs(mesh[k] - oldMesh[k]);
+            if (loss > maxLoss)
+                maxLoss = loss;
+        }
+
+        if (maxLoss < threshold)
             changeBelowThreshold = true; 
-        oldTestVal = newTestVal;
+        copyMesh(mesh, oldMesh, numElements);
         numIter++;
     }
 
@@ -97,18 +100,18 @@ int main(int argc, char** argv) {
             double loss = checkResult(mesh, xSize, ySize, xStep, yStep);
             cout << "Loss: " << loss << "\n";
         }
-        else
-            cout << "Temperature in middle: " << newTestVal << "\n";
+        else {
+            double testVal = mesh[(ySize/2)*xSize + (xSize/2)];
+            cout << "Temperature in middle: " << testVal << "\n";
+        }
         cout << "Number of iterations: " << numIter << "\n";
         double elapsedTime = (double) (clock() - start) / CLOCKS_PER_SEC;
         cout << "Total elapsed time = " << elapsedTime << " seconds\n";
     }
-
-    VTK_out(xSize, ySize, &xMin, &xMax, &yMin, &yMax, mesh, 1);
 }
 
-// Update the values in the mesh using the Jacobi method
-void updateMeshJacobi(double* mesh, int xSize, int ySize, double xStep, double yStep, bool verifyMode) {
+// Update the values in the mesh using the Gauss-Seidel method
+void updateMeshGauss(double* mesh, int xSize, int ySize, double xStep, double yStep, bool verifyMode) {
     double xStep2 = xStep*xStep;
     double yStep2 = yStep*yStep;
     for (int i = 1; i < ySize-1; i++) {
@@ -123,8 +126,8 @@ void updateMeshJacobi(double* mesh, int xSize, int ySize, double xStep, double y
     }
 }
 
-// Update the values in the mesh using the Gauss-Seidel method
-void updateMeshGauss(double* mesh, double* newMesh, int xSize, int ySize, double xStep, double yStep, bool verifyMode) {
+// Update the values in the mesh using the Jacobi method
+void updateMeshJacobi(double* mesh, double* newMesh, int xSize, int ySize, double xStep, double yStep, bool verifyMode) {
     double xStep2 = xStep*xStep;
     double yStep2 = yStep*yStep;
     double source, term1, term2, term3, result;
@@ -195,19 +198,18 @@ void copyMesh(double* mesh, double* newMesh, int numElements) {
         newMesh[k] = mesh[k];
 }
 
-// In verify mode, check the result against the exact solution
+// In verify mode, check the result against the exact solution using the max norm
 double checkResult(double* mesh, int xSize, int ySize, double xStep, double yStep) {
-    double loss = 0;
-    double groundTruth;
+    double maxLoss = 0;
     for (int i = 1; i < ySize-1; i++) {
         for (int j = 1; j < xSize-1; j++) {
-            groundTruth = (((double) j)*xStep) * exp(((double) i)*yStep);
-            loss += abs(groundTruth - mesh[i*xSize + j]);
+            double groundTruth = (((double) j)*xStep) * exp(((double) i)*yStep);
+            double loss =  abs(groundTruth - mesh[i*xSize + j]);
+            if (loss > maxLoss)
+                maxLoss = loss;
         }
     }
-    int numPoints = (xSize-2)*(ySize-2);
-    loss /= (double) numPoints;
-    return loss;
+    return maxLoss;
 }
 
 // Print the exact solution
