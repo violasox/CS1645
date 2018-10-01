@@ -1,3 +1,4 @@
+#include <math.h>
 #include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,7 +9,7 @@ int main(int argc, char** argv) {
     int myRank;
     double startVal = 0;
     double endVal = 1;
-    int n = 100;
+    int n = 8;
     double deltaX = (endVal - startVal) / (double) n;
 
     MPI_Init(NULL, NULL);
@@ -29,7 +30,26 @@ int main(int argc, char** argv) {
         myIntegral += calcStep(curPoint, deltaX, myRank);
         curPoint += deltaX;
     }
+    
+    double numLevels = log2((double) numP);
+    double data;
+    for (int level = 0; level < numLevels; level++) {
+        int num = pow(2, level);
+        if (myRank % (int) pow(2, level+1) == 0) {
+            printf("Process %d receiving data from process %d\n", myRank, myRank + num);
+            MPI_Recv(&data, 1, MPI_DOUBLE, myRank + num, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            myIntegral += data;
+        }
+        if (myRank % (int) pow(2, level+1) == num) {
+            printf("Process %d sending data to process %d\n", myRank, myRank - num);
+            MPI_Send(&myIntegral, 1, MPI_DOUBLE, myRank - num, 0, MPI_COMM_WORLD);
+        }
+    }
 
+    if (myRank == 0)
+        printf("The integral is %f\n", myIntegral);
+
+    /*
     if (myRank != 0)
         MPI_Send(&myIntegral, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
     else {
@@ -40,6 +60,7 @@ int main(int argc, char** argv) {
         }
         printf("The integral is %f\n", myIntegral);
     }
+    */
 
     MPI_Finalize();
     return(0);
