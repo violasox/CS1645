@@ -9,7 +9,7 @@ int main() {
     int myRank;
     double startVal = 0;
     double endVal = 1;
-    int n = 128;
+    int n = 8;
     double deltaX = (endVal - startVal) / (double) n;
 
     MPI_Init(NULL, NULL);
@@ -36,28 +36,8 @@ int main() {
         curPoint += deltaX;
     }
     
-    // Binary tree summing of all processes' integrals
-    double numLevels = log2((double) numP);
-    double data;
-    // For each level of the tree, send and receive from appropriate processes
-    for (int level = 0; level < numLevels; level++) {
-        int num = pow(2, level);
-        // Node receives data if it meets this condition
-        if (myRank % (int) pow(2, level+1) == 0) {
-            int sendingNode = myRank + num;
-            if (sendingNode < numP) {
-                // printf("Process %d receiving data from process %d\n", myRank, sendingNode);
-                MPI_Recv(&data, 1, MPI_DOUBLE, myRank + num, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                myIntegral += data;
-            }
-        }
-        // Node sends data if it meets this condition
-        if (myRank % (int) pow(2, level+1) == num) {
-            int receivingNode = myRank - num;
-            // printf("Process %d sending data to process %d\n", myRank, receivingNode);
-            MPI_Send(&myIntegral, 1, MPI_DOUBLE, receivingNode, 0, MPI_COMM_WORLD);
-        }
-    }
+    double totalIntegral;
+    MPI_Reduce(&myIntegral, &totalIntegral, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     double myElapsed = MPI_Wtime() - myStart;
     double totalElapsed;
@@ -65,7 +45,7 @@ int main() {
 
     // Root reports the final integral (sum of all nodes)
     if (myRank == 0)
-        printf("The integral is %f, calculated in %f seconds\n", myIntegral, totalElapsed);
+        printf("The integral is %f, calculated in %f seconds\n", totalIntegral, totalElapsed);
     
 
     MPI_Finalize();
