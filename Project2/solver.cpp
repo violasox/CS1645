@@ -1,4 +1,5 @@
 #include <cmath>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <mpi.h>
@@ -83,6 +84,9 @@ int main(int argc, char** argv) {
     double* oldMesh = new double[numElements];
     copyMesh(mesh, oldMesh, numElements);
 
+    // Array to monitor the convergence on a solution
+    double convergence[10000];
+
     // Has the change after each iteration fallen low enough to stop
     bool changeBelowThreshold = false;
     bool loop = true;
@@ -105,6 +109,8 @@ int main(int argc, char** argv) {
             if (loss > maxLoss)
                 maxLoss = loss;
         }
+        if (myRank == 0 && numIter % 1000 == 0)
+            convergence[numIter / 1000] = maxLoss;
 
         if (maxLoss < threshold) {
             if (stopSignal) {
@@ -146,7 +152,7 @@ int main(int argc, char** argv) {
         }
         copyMesh(mesh, oldMesh, numElements);
         numIter++;
-        //cout << "Process " << myRank << " finished iteration " << numIter << "\n";
+        // cout << "Process " << myRank << " finished iteration " << numIter << "\n";
     }
     if (verbose)
         cout << "Final mesh from rank " << myRank << ":\n";
@@ -159,14 +165,20 @@ int main(int argc, char** argv) {
             cout << "Expected final mesh:\n";
             printExactResult(totalXSize, totalYSize, xStep, yStep);
         }
-        // double loss = checkResult(mesh, xSize, ySize, xStep, yStep);
-        // cout << "Loss: " << loss << "\n";
+        double loss = checkResult(mesh, myRank, xP, xSize, ySize, xStep, yStep);
+        cout << "Loss: " << loss << "\n";
         cout << "Number of iterations for rank " << myRank << ": " << numIter << "\n";
-        // double elapsedTime = (double) (clock() - start) / CLOCKS_PER_SEC;
-        // cout << "Total elapsed time = " << elapsedTime << " seconds\n";
+        double elapsedTime = (double) (clock() - start) / CLOCKS_PER_SEC;
+        cout << "Total elapsed time = " << elapsedTime << " seconds\n";
     }
-
-   MPI_Finalize();
+    
+    outputMesh(myRank, mesh, xSize, ySize);
+    if (myRank == 0) {
+        ofstream fout("convergence.txt");
+        for (int i = 0; i < numIter / 1000; i++)
+            fout << convergence[i] << ",";
+    }
+    MPI_Finalize();
 }
 
 // Update the values in the mesh using the Gauss-Seidel method
@@ -252,6 +264,19 @@ void printMesh(double* mesh, int xSize, int ySize) {
     cout << "\n";
 }
 
+// Print the mesh to a file
+void outputMesh(int myRank, double* mesh, int xSize, int ySize) {
+    string filename = to_string(myRank) + "_output.txt";
+    ofstream fout(filename);
+    for (int i = ySize-2; i >= 1; i--) {
+        for (int j = 1; j < xSize-1; j++) 
+            fout << setprecision(4) << setw(9) << mesh[i*xSize + j] << " ";    
+        fout << "\n";
+    }
+    fout.close();
+}
+
+
 // Initialize the mesh with 0's, including boundaries
 void setBounds(double* mesh, int xSize, int ySize, double xStep, double yStep) {
     int numElements = (xSize+2)*(ySize+2);
@@ -266,15 +291,22 @@ void copyMesh(double* mesh, double* newMesh, int numElements) {
 }
 
 // In verify mode, check the result against the exact solution using the max norm
-double checkResult(double* mesh, int xSize, int ySize, double xStep, double yStep) {
+double checkResult(double* mesh, int myRank, int xP, int xSize, int ySize, double xStep, double yStep) {
     double maxLoss = 0;
+    int xPos = myRank % xP;
+    int yPos = myRank / xP;
+    double xVal;
+    double yVal = (double) (yPos*(ySize-2) + 1)*yStep;
     for (int i = 1; i < ySize-1; i++) {
+        xVal = (double) (xPos*(xSize-2) + 1)*xStep;
         for (int j = 1; j < xSize-1; j++) {
-            double groundTruth = (((double) j)*xStep) * exp(((double) i)*yStep);
-            double loss =  abs(groundTruth - mesh[i*xSize + j]);
+            double groundTruth = xVal * exp(yVal);
+            double loss = abs(groundTruth - mesh[i*xSize + j]);
             if (loss > maxLoss)
                 maxLoss = loss;
+            xVal += xStep;
         }
+        yVal += yStep;
     }
     return maxLoss;
 }
