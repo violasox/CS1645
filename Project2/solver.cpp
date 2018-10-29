@@ -32,15 +32,18 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &myRank);
 
     if ((totalXSize - 2) % xP != 0) {
-        cout << "x mesh size must be evenly divisible by the number of processors";
+        if (myRank == 0)
+            cout << "x mesh size must be evenly divisible by the number of processorsi\n";
         return 1;
     }
     else if ((totalYSize - 2) % yP != 0) {
-        cout << "y mesh size must be evenly divisible by the number of processors";
+        if (myRank == 0)
+            cout << "y mesh size must be evenly divisible by the number of processors\n";
         return 1;
     }
     else if (numP != xP * yP) {
-        cout << "Total # processors must equal x-direction processors * y-direction processors";
+        if (myRank == 0)
+            cout << "Total # processors must equal x-direction processors * y-direction processors\n";
         return 1;
     }
 
@@ -80,18 +83,21 @@ int main(int argc, char** argv) {
     double* oldMesh = new double[numElements];
     copyMesh(mesh, oldMesh, numElements);
 
-    if (verbose) {
-        cout << "Starting mesh:\n";
-        printMesh(mesh, xSize, ySize);
-    }
-
     // Has the change after each iteration fallen low enough to stop
     bool changeBelowThreshold = false;
+    bool loop = true;
+    bool sentFinished = false;
+    bool stopSignal = false;
     int numIter = 0;
+    int stopIter = 0;
+    MPI_Request broadRequest;
     // Main loop: update the mesh and check whether it's reached convergence
-    while (!changeBelowThreshold) {
+    while (loop) {
         updateMeshGauss(mesh, myRank, xSize, ySize, xP, yP, xStep, yStep);
-        printMesh(mesh, xSize, ySize);
+        //if (numIter % 5 == 0) {
+           // cout << "Mesh at iteration " << numIter << " for rank " << myRank << ":\n";
+           // printMesh(mesh, xSize, ySize);
+        //}
         
         double maxLoss = 0;
         for (int k = 0; k < numElements; k++) {
@@ -100,8 +106,44 @@ int main(int argc, char** argv) {
                 maxLoss = loss;
         }
 
-        if (maxLoss < threshold)
-            changeBelowThreshold = true; 
+        if (maxLoss < threshold) {
+            if (stopSignal) {
+                if (stopIter == numIter)
+                    loop = false;
+            }
+            else if (myRank != 0) {
+                if (!sentFinished) {
+                    MPI_Isend(&numIter, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, &sendRequest);
+                    MPI_Ibcast(&stopIter, 1, MPI_INT, 0, MPI_COMM_WORLD, &broadRequest);
+                    sentFinished = true;
+                }
+                int flag = 0;
+                MPI_Test(&broadRequest, &flag, MPI_STATUS_IGNORE);
+                if (flag) {
+                    stopSignal = true;
+                    cout << "Process " << myRank << " received stop signal\n";
+                }
+            }
+            else {
+                bool allFinished = true;
+                int flag = 0;
+                for (int i = 1; i < numP; i++) {
+                    MPI_Iprobe(i, 1, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
+                    if (flag == 0) {
+                        allFinished = false;
+                        break;
+                    }
+                }
+                if (allFinished && !sentFinished) {
+                    cout << "All processes have finished!\n";
+                    int stopIter = numIter + 10;
+                    cout << "Stop after iteration " << stopIter << "\n";
+                    MPI_Ibcast(&stopIter, 1, MPI_INT, 0, MPI_COMM_WORLD, &broadRequest);
+                    sentFinished = true;
+                    stopSignal = true;
+                }
+            }
+        }
         copyMesh(mesh, oldMesh, numElements);
         numIter++;
     }
@@ -113,11 +155,13 @@ int main(int argc, char** argv) {
    
     // Print out extra info about the calculation in verbose mode
     if (verbose) {
-        cout << "Expected final mesh:\n";
-        printExactResult(xSize, ySize, xStep, yStep);
+        if (myRank == 0) {
+            cout << "Expected final mesh:\n";
+            printExactResult(totalXSize, totalYSize, xStep, yStep);
+        }
         // double loss = checkResult(mesh, xSize, ySize, xStep, yStep);
         // cout << "Loss: " << loss << "\n";
-        cout << "Number of iterations: " << numIter << "\n";
+        cout << "Number of iterations for rank " << myRank << ": " << numIter << "\n";
         // double elapsedTime = (double) (clock() - start) / CLOCKS_PER_SEC;
         // cout << "Total elapsed time = " << elapsedTime << " seconds\n";
     }
@@ -154,7 +198,7 @@ void updateBounds(double* mesh, int myRank, int xSize, int ySize, int xP, int yP
     double myRightBound[ySize];
     for (int i = 0; i < ySize; i++) {
         myLeftBound[i] = mesh[i*xSize + 1];
-        myRightBound[i] = mesh[i*(xSize+1) - 2];
+        myRightBound[i] = mesh[(i+1)*(xSize) - 2];
     }
     sendBoundary(myLeftBound, ySize, myRank, xP, yP, Direction::LEFT);
     sendBoundary(myRightBound, ySize, myRank, xP, yP, Direction::RIGHT);
@@ -173,13 +217,13 @@ void updateBounds(double* mesh, int myRank, int xSize, int ySize, int xP, int yP
     double otherRightBound[ySize];
     receiveBoundary(otherLeftBound, myRank, xP, yP, xSize, ySize, xStep, yStep, Direction::LEFT);
     receiveBoundary(otherRightBound, myRank, xP, yP, xSize, ySize, xStep, yStep, Direction::RIGHT);
-    cout << "Right boundary: ";
+    //cout << "Right boundary: ";
     for (int i = 0; i < ySize; i++) {
-        cout << otherRightBound[i] << ": " << (i+1)*(xSize) - 1 << ", ";
+        //cout << otherRightBound[i] << ": " << (i+1)*(xSize) - 1 << ", ";
         mesh[i*xSize] = otherLeftBound[i];
         mesh[(i+1)*(xSize) - 1] = otherRightBound[i];
     }
-    cout << "\n";
+    //cout << "\n";
 
     double otherTopBound[xSize];
     double otherBotBound[xSize];
@@ -261,7 +305,7 @@ void sendBoundary(double* sendBound, int boundLen, int myRank, int xP, int yP, D
         destRank = xP*yPos + xPos + 1;
     else
         return;
-    cout << "Sending boundary\n";
+    //cout << "Sending boundary\n";
     MPI_Isend(sendBound, boundLen, MPI_DOUBLE, destRank, 0, MPI_COMM_WORLD, &sendRequest);
 }
 
@@ -308,31 +352,31 @@ void receiveBoundary(double* recvBound, int myRank, int xP, int yP, int xSize, i
 // If getting left/right boundary, use yStep, ySize, yPos
 // Opposite if getting up/down boundary
 void getBoundaryCondition(double* bound, Direction dir, double step, int size, int pos) {
-    cout << "Receiving boundary condition for ";
+    // cout << "Receiving boundary condition for ";
     // Find the initial x/y value for this processor's section
     // Subtract 2 because repeated unit doesn't include boundaries
     double val = (size-2)*step*pos;
     if (dir == Direction::DOWN) {
-        cout << "up\n";
+        //cout << "up\n";
         for (int i = 0; i < size; i++) {
             bound[i] = val*exp(1);
             val += step;
         }
     }
     else if (dir == Direction::UP) {
-        cout << "down\n";
+        //cout << "down\n";
         for (int i = 0; i < size; i++) {
             bound[i] = val;
             val += step;
         }
     }
     else if (dir == Direction::LEFT) {
-        cout << "left\n";
+        //cout << "left\n";
         for (int i = 0; i < size; i++)
             bound[i] = 0;
     }
     else {
-        cout << "right\n";
+        //cout << "right\n";
         for (int i = 0; i < size; i++) {
             bound[i] = 2*exp(val);
             val += step;
