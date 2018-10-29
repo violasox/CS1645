@@ -136,7 +136,7 @@ int main(int argc, char** argv) {
                 }
                 if (allFinished && !sentFinished) {
                     cout << "All processes have finished!\n";
-                    int stopIter = numIter + 10;
+                    stopIter = numIter + 6;
                     cout << "Stop after iteration " << stopIter << "\n";
                     MPI_Ibcast(&stopIter, 1, MPI_INT, 0, MPI_COMM_WORLD, &broadRequest);
                     sentFinished = true;
@@ -146,8 +146,8 @@ int main(int argc, char** argv) {
         }
         copyMesh(mesh, oldMesh, numElements);
         numIter++;
+        //cout << "Process " << myRank << " finished iteration " << numIter << "\n";
     }
-
     if (verbose)
         cout << "Final mesh from rank " << myRank << ":\n";
 
