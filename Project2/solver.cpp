@@ -14,7 +14,7 @@ MPI_Request sendRequest;
 // First two arguments should be size of the mesh in (x y) order
 // Optional 3rd argument -v triggers verbose printout mode
 int main(int argc, char** argv) {
-    clock_t start = clock();
+    double startTime = MPI_Wtime();
 
     if (argc < 5) {
         cout << "Need at least 4 arguments: mesh size in x and y directions and number of processors in x and y directions. Use 5th argument -v for verbose mode.\n";
@@ -157,19 +157,19 @@ int main(int argc, char** argv) {
     if (verbose)
         cout << "Final mesh from rank " << myRank << ":\n";
 
-    printMesh(mesh, xSize, ySize);
+    // printMesh(mesh, xSize, ySize);
    
     // Print out extra info about the calculation in verbose mode
     if (verbose) {
         if (myRank == 0) {
-            cout << "Expected final mesh:\n";
-            printExactResult(totalXSize, totalYSize, xStep, yStep);
+            //cout << "Expected final mesh:\n";
+            //printExactResult(totalXSize, totalYSize, xStep, yStep);
         }
         double loss = checkResult(mesh, myRank, xP, xSize, ySize, xStep, yStep);
         cout << "Loss: " << loss << "\n";
         cout << "Number of iterations for rank " << myRank << ": " << numIter << "\n";
-        double elapsedTime = (double) (clock() - start) / CLOCKS_PER_SEC;
-        cout << "Total elapsed time = " << elapsedTime << " seconds\n";
+        double elapsedTime = MPI_Wtime() - startTime;
+        cout << "Total elapsed time for process " << myRank << " is " << elapsedTime << " seconds\n";
     }
     
     outputMesh(myRank, mesh, xSize, ySize);
