@@ -1,4 +1,5 @@
 #include <cmath>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -60,9 +61,11 @@ int main(int argc, char** argv) {
     copyMesh(mesh, oldMesh, numElements);
 
     if (verbose) {
-        cout << "Starting mesh:\n";
-        printMesh(mesh, xSize, ySize);
+        //cout << "Starting mesh:\n";
+        //printMesh(mesh, xSize, ySize);
     }
+
+    double convergence[10000];
 
     // Has the change after each iteration fallen low enough to stop
     bool changeBelowThreshold = false;
@@ -80,6 +83,9 @@ int main(int argc, char** argv) {
             if (loss > maxLoss)
                 maxLoss = loss;
         }
+        
+        if (numIter % 1000 == 0)
+            convergence[numIter / 1000] = maxLoss;
 
         if (maxLoss < threshold)
             changeBelowThreshold = true; 
@@ -90,13 +96,13 @@ int main(int argc, char** argv) {
     if (verbose)
         cout << "Final mesh:\n";
 
-    printMesh(mesh, xSize, ySize);
+    // printMesh(mesh, xSize, ySize);
    
     // Print out extra info about the calculation in verbose mode
     if (verbose) {
         if (verifyMode) {
-            cout << "Expected final mesh:\n";
-            printExactResult(xSize, ySize, xStep, yStep);
+            //cout << "Expected final mesh:\n";
+            //printExactResult(xSize, ySize, xStep, yStep);
             double loss = checkResult(mesh, xSize, ySize, xStep, yStep);
             cout << "Loss: " << loss << "\n";
         }
@@ -108,6 +114,9 @@ int main(int argc, char** argv) {
         double elapsedTime = (double) (clock() - start) / CLOCKS_PER_SEC;
         cout << "Total elapsed time = " << elapsedTime << " seconds\n";
     }
+    ofstream fout("convergence.txt");
+    for (int i = 0; i < numIter / 1000; i++)
+        fout << convergence[i] << ",";
 }
 
 // Update the values in the mesh using the Gauss-Seidel method

@@ -1,0 +1,11 @@
+#!/usr/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=4
+#SBATCH --cluster=smp
+#SBATCH --partition=smp
+#SBATCH --time=0-01:00:00
+#SBATCH --job-name=violasox
+#SBATCH --mail-user=kcs58@pitt.edu
+#SBATCH --mail-type=END,FAIL
+module purge
+srun solver 200 200 -v
