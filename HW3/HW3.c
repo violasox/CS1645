@@ -8,7 +8,7 @@
 int numThreads;
 double startVal;
 double endVal;
-int n;
+long n;
 double integral = 0;
 pthread_mutex_t mutex;
 
@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
     sscanf(argv[1], "%d", &numThreads);
     sscanf(argv[2], "%lf", &startVal);
     sscanf(argv[3], "%lf", &endVal);
-    sscanf(argv[4], "%d", &n);
+    sscanf(argv[4], "%ld", &n);
 
     clock_t start = clock();
 
@@ -34,11 +34,12 @@ int main(int argc, char* argv[]) {
     threadHandles = malloc(numThreads*sizeof(pthread_t));
 
     for (long i = 0; i < numThreads; i++) 
-        pthread_create(&threadHandles[0], NULL, work, (void*) i);
+        pthread_create(&threadHandles[i], NULL, work, (void*) i);
     
     for (int i = 0; i < numThreads; i++)
-        pthread_join(threadHandles[0], NULL);
+        pthread_join(threadHandles[i], NULL);
 
+    pthread_mutex_destroy(&mutex);
     double timeElapsed = (double) (clock() - start) / CLOCKS_PER_SEC;
     // Root reports the final integral (sum of all nodes)
     printf("The integral is %f, calculated in %f seconds\n", integral, timeElapsed);
@@ -47,14 +48,14 @@ int main(int argc, char* argv[]) {
 
 void* work(void* input) {
     long myRank = (long) input;
-    double deltaX = (endVal - startVal) / n;
+    double deltaX = (endVal - startVal) / (double) n;
     // Points in the integral that each process handles
-    int pointsPerNode = n / numThreads;
+    long pointsPerNode = n / (long) numThreads;
     // Starting point for this process
     double curPoint = startVal + myRank*pointsPerNode*deltaX;
     double myIntegral = 0;
     // Calculate the integral for this process' section
-    for (int i = 0; i < pointsPerNode; i++) {
+    for (long i = 0; i < pointsPerNode; i++) {
         myIntegral += calcStep(curPoint, deltaX, myRank);
         curPoint += deltaX;
     }
