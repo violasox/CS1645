@@ -17,10 +17,10 @@ int main(int argc, char* argv[]) {
         printf("Arguments: number of threads, starting value, ending value, number of points\n");
         return 1;
     }
-    sscanf(argv[0], "%d", &numThreads);
-    sscanf(argv[1], "%lf", &startVal);
-    sscanf(argv[2], "%lf", &endVal);
-    sscanf(argv[3], "%d", &n);
+    sscanf(argv[1], "%d", &numThreads);
+    sscanf(argv[2], "%lf", &startVal);
+    sscanf(argv[3], "%lf", &endVal);
+    sscanf(argv[4], "%d", &n);
 
     clock_t start = clock();
 
@@ -47,7 +47,7 @@ int main(int argc, char* argv[]) {
 
 void* work(void* input) {
     long myRank = (long) input;
-    double deltaX = (startVal - endVal) / n;
+    double deltaX = (endVal - startVal) / n;
     // Points in the integral that each process handles
     int pointsPerNode = n / numThreads;
     // Starting point for this process
