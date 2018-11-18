@@ -34,10 +34,12 @@ int main(int argc, char* argv[]) {
     threadHandles = malloc(numThreads*sizeof(pthread_t));
 
     for (long i = 0; i < numThreads; i++) 
-        pthread_create(&threadHandles[0], NULL, work, (void*) i);
+        pthread_create(&threadHandles[i], NULL, work, (void*) i);
     
     for (int i = 0; i < numThreads; i++)
-        pthread_join(threadHandles[0], NULL);
+        pthread_join(threadHandles[i], NULL);
+        
+    pthread_mutex_destroy(&mutex);
 
     double timeElapsed = (double) (clock() - start) / CLOCKS_PER_SEC;
     // Root reports the final integral (sum of all nodes)
