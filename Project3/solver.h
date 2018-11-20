@@ -1,4 +1,4 @@
-void updateMeshJacobi(int myRank);
+void updateMeshJacobi(long myRank);
 void* work(void* rank);
 double sourceTerm(double x, double y);
 void printMesh(double* mesh, int xSize, int ySize);

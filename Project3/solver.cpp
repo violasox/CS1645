@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
     yP = stoi(argv[4]);
 
     if ((totalXSize - 2) % xP != 0) {
-        cout << "x mesh size must be evenly divisible by the number of processorsi\n";
+        cout << "x mesh size must be evenly divisible by the number of processors\n";
         return 1;
     }
     else if ((totalYSize - 2) % yP != 0) {
@@ -80,8 +80,6 @@ int main(int argc, char** argv) {
     setBounds(mesh);
     oldMesh = new double[numElements];
     copyMesh(mesh, oldMesh, numElements);
-    printMesh(mesh, totalXSize, totalYSize);
-    printMesh(oldMesh, totalXSize, totalYSize);
 
     maxLoss = 0;
     pthread_mutex_init(&guard, NULL);
@@ -96,15 +94,15 @@ int main(int argc, char** argv) {
         pthread_join(threadHandles[i], NULL);
 
     double elapsed = (double) (clock() - start) / CLOCKS_PER_SEC;
-    if (verbose) {
-        cout << "Final mesh:\n";
-        printMesh(mesh, totalXSize, totalYSize);
-    }
+//    if (verbose) {
+//        cout << "Final mesh:\n";
+//        printMesh(mesh, totalXSize, totalYSize);
+//    }
    
     // Print out extra info about the calculation in verbose mode
     if (verbose) {
-        cout << "Expected final mesh:\n";
-        printExactResult();
+//        cout << "Expected final mesh:\n";
+//        printExactResult();
         double loss = checkResult();
         cout << "Loss: " << loss << "\n";
         cout << "Number of iterations: " << numIter << "\n";
@@ -118,6 +116,7 @@ int main(int argc, char** argv) {
 }
 
 void* work(void* rank) {
+    clock_t start = clock();
     long myRank = (long) rank;
     int xSize = ((totalXSize - 2) / xP);
     int ySize = ((totalYSize - 2) / yP);
@@ -128,22 +127,26 @@ void* work(void* rank) {
     while (true) {
         // cout << "Got here " << globalCounter << "\n";
         updateMeshJacobi(myRank);
-        //if (numIter % 5 == 0) {
-           // cout << "Mesh at iteration " << numIter << " for rank " << myRank << ":\n";
-           // printMesh(mesh, xSize, ySize);
-        //}
         double myMaxLoss = 0;
+        double myMaxLossX;
+        double myMaxLossY;
         // Calculate the max loss for this thread's section
-        for (int i = xSize*xPos; i < xSize*(xPos + 1); i++) {
-            for (int j = ySize*yPos; j < ySize*(yPos + 1); j++) {
-                double loss = abs(mesh[i*totalXSize + j] - oldMesh[i*totalXSize + j]);
-                if (loss > myMaxLoss)
+        for (int i = xSize*xPos + 1; i < xSize*(xPos + 1) + 1; i++) {
+            for (int j = ySize*yPos + 1; j < ySize*(yPos + 1) + 1; j++) {
+                double loss = fabs(mesh[i*totalXSize + j] - oldMesh[i*totalXSize + j]);
+                if (loss > myMaxLoss) {
                     myMaxLoss = loss;
+                    myMaxLossX = j;
+                    myMaxLossY = i;
+                }
             }
         }
+
         // Barrier function to synchronize threads
         pthread_mutex_lock(&guard);
         if (globalStop) {
+            double elapsed = (double) (clock() - start) / CLOCKS_PER_SEC;
+            cout << "Thread " << myRank << " ran for " << elapsed << " seconds.\n";
             pthread_mutex_unlock(&guard);
             return myReturn;
         }
@@ -170,19 +173,19 @@ void* work(void* rank) {
 }
 
 
-// Update the values in the mesh using the Gauss-Seidel method
-void updateMeshJacobi(int myRank) {
+// Update the values in the mesh using the Jacobi method
+void updateMeshJacobi(long myRank) {
     int xSize = ((totalXSize - 2) / xP);
     int ySize = ((totalYSize - 2) / yP);
     double xStep2 = xStep*xStep;
     double yStep2 = yStep*yStep;
-    int xPos = myRank % xP;
-    int yPos = myRank / xP;
-    double xStart = xStep*(xPos*xSize + 1);
-    double yStart = yStep*(yPos*ySize + 1);
+    int xPos = (int) myRank % xP;
+    int yPos = (int) myRank / xP;
+    double xStart = xStep*xPos*xSize;
+    double yStart = yStep*yPos*ySize;
     for (int i = xSize*xPos + 1; i < xSize*(xPos + 1) + 1; i++) {
         for (int j = ySize*yPos + 1; j < ySize*(yPos + 1) + 1; j++) {
-            double source = sourceTerm(((double) j)*xStep + xStart, ((double) i)*yStep + yStart);
+            double source = sourceTerm(((double) j)*xStep, ((double) i)*yStep);
             double term1 = xStep2 * (oldMesh[(i+1)*totalXSize + j] + oldMesh[(i-1)*totalXSize + j]);
             double term2 = yStep2 * (oldMesh[i*totalXSize + (j+1)] + oldMesh[i*totalXSize + (j-1)]);
             double term3 = -1 * (xStep2*yStep2*source);
