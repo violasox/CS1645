@@ -52,11 +52,11 @@ int main(int argc, char** argv) {
     
     // Allocate the mesh grid that Poisson should be calculated over
     int numElements = xSize*ySize;
-    double* mesh = new double[numElements];
+    double* __restrict__ mesh = new double[numElements];
     setBounds(mesh, xSize, ySize, xStep, yStep, verifyMode);
-    double* mesh2 = new double[numElements];
+    double* __restrict__ mesh2 = new double[numElements];
     copyMesh(mesh, mesh2, numElements);
-    double* oldMesh = new double[numElements];
+    double* __restrict__ oldMesh = new double[numElements];
     copyMesh(mesh, oldMesh, numElements);
 
     if (verbose) {
@@ -67,28 +67,59 @@ int main(int argc, char** argv) {
     double convergence[10000];
 
     // Has the change after each iteration fallen low enough to stop
-    bool changeBelowThreshold = false;
+    // bool changeBelowThreshold = false;
     int numIter = 0;
+    // Intialize max loss to value above threshold so loop starts
+    double maxLoss = 100;
+    double xStep2 = xStep*xStep;
+    double yStep2 = yStep*yStep;
+    double source, term1, term2, term3, result;
     // Main loop: update the mesh and check whether it's reached convergence
-    #pragma acc data copyin(mesh[0:numElements]) copyin(mesh2[0:numElements]) copyin(oldMesh[0:numElements]) copyout(mesh[0:numElements])
-    while (!changeBelowThreshold) {
-        updateMeshJacobi(mesh, mesh2, xSize, ySize, xStep, yStep, verifyMode);
+    #pragma acc data copyin(mesh[0:numElements]) copyin(mesh2[0:numElements]) copyin(oldMesh[0:numElements]) 
+    {
+    #pragma acc data copyout(mesh[0:numElements])
+    while (maxLoss > threshold) 
+    {
+        // updateMeshJacobi(mesh, mesh2, xSize, ySize, xStep, yStep, verifyMode);
+        #pragma acc loop gang
+        for (int i = 1; i < ySize-1; i++)
+        {
+            #pragma acc loop worker
+            for (int j = 1; j < xSize-1; j++) 
+            {
+                // source = sourceTerm(((double) j)*xStep, ((double) i)*yStep, verifyMode);
+                source = ((double) j)*xStep * exp(((double) i)*yStep);
+                term1 = xStep2 * (mesh[(i+1)*xSize + j] + mesh[(i-1)*xSize + j]);
+                term2 = yStep2 * (mesh[i*xSize + (j+1)] + mesh[i*xSize + (j-1)]);
+                term3 = -1 * (xStep2*yStep2*source);
+                result = (term1 + term2 + term3) / (2*(xStep2 + yStep2));
+                mesh2[i*xSize + j] = result;
+            }
+            // copyMesh(newMesh, mesh, xSize*ySize);
+            for (int k = 0; k < xSize*ySize; k++) 
+                mesh[k] = mesh2[k];
+        }
 
-        double maxLoss = 0;
-        for (int k = 0; k < numElements; k++) {
-            double loss = abs(mesh[k] - oldMesh[k]);
+        maxLoss = 0;
+        #pragma acc loop gang
+        for (int k = 0; k < numElements; k++)
+        {
+            double loss = fabs(mesh[k] - oldMesh[k]);
             if (loss > maxLoss)
                 maxLoss = loss;
         }
         
-        if (numIter % 1000 == 0)
-            convergence[numIter / 1000] = maxLoss;
-
-        if (maxLoss < threshold)
-            changeBelowThreshold = true; 
-        copyMesh(mesh, oldMesh, numElements);
+        // copyMesh(mesh, oldMesh, numElements);
+        for (int k = 0; k < numElements; k++) 
+            oldMesh[k] = mesh[k];
         numIter++;
     }
+    }
+        // if (numIter % 1000 == 0)
+        //     convergence[numIter / 1000] = maxLoss;
+
+        // if (maxLoss < threshold)
+        //     changeBelowThreshold = true; 
 
     if (verbose)
         cout << "Final mesh:\n";
@@ -119,32 +150,31 @@ int main(int argc, char** argv) {
 
 
 // Update the values in the mesh using the Jacobi method
-#pragma acc routine gang
 void updateMeshJacobi(double* mesh, double* newMesh, int xSize, int ySize, double xStep, double yStep, bool verifyMode) {
     double xStep2 = xStep*xStep;
     double yStep2 = yStep*yStep;
     double source, term1, term2, term3, result;
-    #pragma acc loop gang
-    {
+    
     for (int i = 1; i < ySize-1; i++) {
-        #pragma acc loop worker
-        {
+        
         for (int j = 1; j < xSize-1; j++) {
-            source = sourceTerm(((double) j)*xStep, ((double) i)*yStep, verifyMode);
+            // source = sourceTerm(((double) j)*xStep, ((double) i)*yStep, verifyMode);
+            source = ((double) j)*xStep * exp(((double) i)*yStep);
             term1 = xStep2 * (mesh[(i+1)*xSize + j] + mesh[(i-1)*xSize + j]);
             term2 = yStep2 * (mesh[i*xSize + (j+1)] + mesh[i*xSize + (j-1)]);
             term3 = -1 * (xStep2*yStep2*source);
             result = (term1 + term2 + term3) / (2*(xStep2 + yStep2));
             newMesh[i*xSize + j] = result;
         }
-        }
-    }
-        copyMesh(newMesh, mesh, xSize*ySize);
+        
+    
+        // copyMesh(newMesh, mesh, xSize*ySize);
+        for (int k = 0; k < xSize*ySize; k++) 
+            mesh[k] = newMesh[k];
     }
 }
 
 // Calculate the source term
-#pragma acc routine gang
 double sourceTerm(double x, double y, bool verifyMode) {
     if (verifyMode)
         return x * exp(y);
@@ -193,9 +223,7 @@ void setBounds(double* mesh, int xSize, int ySize, double xStep, double yStep, b
 }
 
 // Copy one mesh into another
-#pragma acc routine gang
 void copyMesh(double* mesh, double* newMesh, int numElements) {
-    #pragma acc loop gang
     for (int k = 0; k < numElements; k++) 
         newMesh[k] = mesh[k];
 }
