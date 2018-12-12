@@ -4,16 +4,18 @@
 #include "HW4.h"
 
 // Threads per block
-#define M 1024
+#define THREADS_PER_BLOCK 32
 // Points in discrete integral
-#define N 50000
+#define N 1000000000
+#define NUM_THREADS 1024
 // Integral begins at
 #define START_VAL 0.0
 // Integral ends at
 #define END_VAL 1.0
 
 int main() {
-    int numBlocks = (N - 1)/M + 1;
+    cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
+    int numBlocks = (NUM_THREADS - 1)/THREADS_PER_BLOCK + 1;
     printf("Calculating integral with %d points and %d GPU blocks\n", N, numBlocks);
     double* resultVec = (double*) malloc(sizeof(double)*numBlocks);
     double* resultDev;
@@ -24,7 +26,7 @@ int main() {
     cudaEventCreate(&stop);
     cudaEventRecord(start);
     
-    deviceIntegrate<<<numBlocks, M>>>(resultDev);
+    deviceIntegrate<<<numBlocks, THREADS_PER_BLOCK>>>(resultDev);
     cudaEventRecord(stop);
     cudaMemcpy(resultVec, resultDev, sizeof(double)*numBlocks, cudaMemcpyDeviceToHost);
     double integral = 0;
@@ -43,14 +45,16 @@ int main() {
 }
 
 __global__ void deviceIntegrate(double* result) {
-    __shared__ double resultVector[M];
+    __shared__ double resultVector[THREADS_PER_BLOCK];
     double deltaX = (END_VAL - START_VAL) / (double) N;
+    int pointsPerThread = (N - 1)/NUM_THREADS + 1;
     result[blockIdx.x] = 0;
-    int globalIdx = threadIdx.x + blockIdx.x*M;
+    int globalIdx = threadIdx.x + blockIdx.x*THREADS_PER_BLOCK;
     int localIdx = threadIdx.x;
-    if (globalIdx < N) {
-        double myVal = START_VAL + globalIdx*deltaX;
-        resultVector[localIdx] = calcStep(myVal, deltaX);
+    resultVector[localIdx] = 0;
+    for (int i = globalIdx*pointsPerThread; i < (globalIdx+1)*pointsPerThread && i < N; i++) {
+        double myVal = START_VAL + i*deltaX;
+        resultVector[localIdx] += calcStep(myVal, deltaX);
     }
     // result[0] = 5;
     atomicAdd(&result[blockIdx.x], resultVector[localIdx]);
