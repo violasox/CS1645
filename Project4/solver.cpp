@@ -15,9 +15,6 @@ using namespace std;
 int main(int argc, char** argv) {
     clock_t start = clock();
 
-    // Flag to toggle verification (true) or problem solving (false)
-    bool verifyMode = true;
-    
     if (argc < 3) {
         cout << "Need at least arguments: mesh size in x and y directions. Use 3rd argument -v for verbose mode.\n";
         return 1;
@@ -32,18 +29,10 @@ int main(int argc, char** argv) {
         verbose = true;
 
     double xMin, xMax, yMin, yMax;
-    if (verifyMode) {
-        xMin = 0;
-        xMax = 2;
-        yMin = 0;
-        yMax = 1;
-    }
-    else {
-        xMin = 0;
-        xMax = 1;
-        yMin = 0;
-        yMax = 1;
-    }
+    xMin = 0;
+    xMax = 2;
+    yMin = 0;
+    yMax = 1;
     
     double xStep = ((double) (xMax - xMin)) / ((double) (xSize-1));
     double yStep = ((double) (yMax - yMin)) / ((double) (ySize-1));
@@ -53,7 +42,7 @@ int main(int argc, char** argv) {
     // Allocate the mesh grid that Poisson should be calculated over
     int numElements = xSize*ySize;
     double* __restrict__ mesh = new double[numElements];
-    setBounds(mesh, xSize, ySize, xStep, yStep, verifyMode);
+    setBounds(mesh, xSize, ySize, xStep, yStep, true);
     double* __restrict__ mesh2 = new double[numElements];
     copyMesh(mesh, mesh2, numElements);
     double* __restrict__ oldMesh = new double[numElements];
@@ -75,19 +64,15 @@ int main(int argc, char** argv) {
     double yStep2 = yStep*yStep;
     double source, term1, term2, term3, result;
     // Main loop: update the mesh and check whether it's reached convergence
-    #pragma acc data copyin(mesh[0:numElements]) copyin(mesh2[0:numElements]) copyin(oldMesh[0:numElements]) 
-    {
-    #pragma acc data copyout(mesh[0:numElements])
+    #pragma acc data copy(mesh[0:numElements]) copyin(mesh2[0:numElements]) copyin(oldMesh[0:numElements]) 
     while (maxLoss > threshold) 
     {
-        // updateMeshJacobi(mesh, mesh2, xSize, ySize, xStep, yStep, verifyMode);
-        #pragma acc loop gang
+        #pragma acc parallel loop gang
         for (int i = 1; i < ySize-1; i++)
         {
-            #pragma acc loop worker
+            #pragma acc loop vector
             for (int j = 1; j < xSize-1; j++) 
             {
-                // source = sourceTerm(((double) j)*xStep, ((double) i)*yStep, verifyMode);
                 source = ((double) j)*xStep * exp(((double) i)*yStep);
                 term1 = xStep2 * (mesh[(i+1)*xSize + j] + mesh[(i-1)*xSize + j]);
                 term2 = yStep2 * (mesh[i*xSize + (j+1)] + mesh[i*xSize + (j-1)]);
@@ -95,13 +80,14 @@ int main(int argc, char** argv) {
                 result = (term1 + term2 + term3) / (2*(xStep2 + yStep2));
                 mesh2[i*xSize + j] = result;
             }
-            // copyMesh(newMesh, mesh, xSize*ySize);
-            for (int k = 0; k < xSize*ySize; k++) 
-                mesh[k] = mesh2[k];
         }
 
+        #pragma acc parallel loop gang
+        for (int k = 0; k < xSize*ySize; k++) 
+            mesh[k] = mesh2[k];
+
         maxLoss = 0;
-        #pragma acc loop gang
+        #pragma acc parallel loop gang
         for (int k = 0; k < numElements; k++)
         {
             double loss = fabs(mesh[k] - oldMesh[k]);
@@ -109,17 +95,11 @@ int main(int argc, char** argv) {
                 maxLoss = loss;
         }
         
-        // copyMesh(mesh, oldMesh, numElements);
+        #pragma acc parallel loop gang
         for (int k = 0; k < numElements; k++) 
             oldMesh[k] = mesh[k];
         numIter++;
     }
-    }
-        // if (numIter % 1000 == 0)
-        //     convergence[numIter / 1000] = maxLoss;
-
-        // if (maxLoss < threshold)
-        //     changeBelowThreshold = true; 
 
     if (verbose)
         cout << "Final mesh:\n";
@@ -128,58 +108,12 @@ int main(int argc, char** argv) {
    
     // Print out extra info about the calculation in verbose mode
     if (verbose) {
-        if (verifyMode) {
-            //cout << "Expected final mesh:\n";
-            //printExactResult(xSize, ySize, xStep, yStep);
-            double loss = checkResult(mesh, xSize, ySize, xStep, yStep);
-            cout << "Loss: " << loss << "\n";
-        }
-        else {
-            double testVal = mesh[(ySize/2)*xSize + (xSize/2)];
-            cout << "Temperature in middle: " << testVal << "\n";
-        }
+        double loss = checkResult(mesh, xSize, ySize, xStep, yStep);
+        cout << "Loss: " << loss << "\n";
         cout << "Number of iterations: " << numIter << "\n";
         double elapsedTime = (double) (clock() - start) / CLOCKS_PER_SEC;
         cout << "Total elapsed time = " << elapsedTime << " seconds\n";
     }
-    ofstream fout("convergence.txt");
-    for (int i = 0; i < numIter / 1000; i++)
-        fout << convergence[i] << ",";
-}
-
-
-
-// Update the values in the mesh using the Jacobi method
-void updateMeshJacobi(double* mesh, double* newMesh, int xSize, int ySize, double xStep, double yStep, bool verifyMode) {
-    double xStep2 = xStep*xStep;
-    double yStep2 = yStep*yStep;
-    double source, term1, term2, term3, result;
-    
-    for (int i = 1; i < ySize-1; i++) {
-        
-        for (int j = 1; j < xSize-1; j++) {
-            // source = sourceTerm(((double) j)*xStep, ((double) i)*yStep, verifyMode);
-            source = ((double) j)*xStep * exp(((double) i)*yStep);
-            term1 = xStep2 * (mesh[(i+1)*xSize + j] + mesh[(i-1)*xSize + j]);
-            term2 = yStep2 * (mesh[i*xSize + (j+1)] + mesh[i*xSize + (j-1)]);
-            term3 = -1 * (xStep2*yStep2*source);
-            result = (term1 + term2 + term3) / (2*(xStep2 + yStep2));
-            newMesh[i*xSize + j] = result;
-        }
-        
-    
-        // copyMesh(newMesh, mesh, xSize*ySize);
-        for (int k = 0; k < xSize*ySize; k++) 
-            mesh[k] = newMesh[k];
-    }
-}
-
-// Calculate the source term
-double sourceTerm(double x, double y, bool verifyMode) {
-    if (verifyMode)
-        return x * exp(y);
-    else
-        return 0.2;
 }
 
 // Print the mesh to standard output
